@@ -48,9 +48,18 @@ private[sql] class SessionState(sparkSession: SparkSession) {
    */
   lazy val conf: SQLConf = new SQLConf
 
+  lazy val internalHadoopConfiguration = scala.collection.mutable.Map[String, String]()
+
+  def setInternalHadoopConf(key: String, value: String): Unit =
+    internalHadoopConfiguration += (key -> value)
+
+  def setInternalHadoopConf(conf: scala.collection.Map[String, String]): Unit =
+    if (conf != null) conf.foreach { case (k, v) => setInternalHadoopConf(k, v) }
+
   def newHadoopConf(): Configuration = {
     val hadoopConf = new Configuration(sparkSession.sparkContext.hadoopConfiguration)
     conf.getAllConfs.foreach { case (k, v) => if (v ne null) hadoopConf.set(k, v) }
+    internalHadoopConfiguration.foreach { case (k, v) => if (v ne null) hadoopConf.set(k, v) }
     hadoopConf
   }
 

@@ -17,11 +17,14 @@
 
 package org.apache.spark.sql.sources
 
+import java.util.Properties
+
 import org.apache.spark.annotation.{DeveloperApi, Experimental}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.execution.datasources.CaseInsensitiveMap
 import org.apache.spark.sql.execution.streaming.{Sink, Source}
 import org.apache.spark.sql.streaming.OutputMode
 import org.apache.spark.sql.types.StructType
@@ -224,6 +227,13 @@ abstract class BaseRelation {
    * @since 1.6.0
    */
   def unhandledFilters(filters: Array[Filter]): Array[Filter] = filters
+
+  /**
+   * Internal contextual information used for policy enforcement
+   *
+   * @since 2.0.0
+   */
+  private[sql] var connectionContext: ConnectionContext = _
 }
 
 /**
@@ -304,4 +314,81 @@ trait InsertableRelation {
 @Experimental
 trait CatalystScan {
   def buildScan(requiredColumns: Seq[Attribute], filters: Seq[Expression]): RDD[Row]
+}
+
+/**
+ * ::Experimental::
+ * An interface for providing context around a connection (e.g. security context)
+ *
+ * @since 2.0.0
+ */
+trait ConnectionContext {
+}
+
+/**
+ * ::Experimental::
+ * An interface for connection information
+ *
+ * @since 2.0.0
+ */
+@Experimental
+trait ConnectionInfo {
+  def context: ConnectionContext
+}
+
+/**
+ * ::Experimental::
+ * An interface for JDBC connection information
+ *
+ * @since 2.0.0
+ */
+@Experimental
+case class JDBCConnectionInfo(url: String, table: String,
+                              properties: Properties = new Properties(),
+                              context: ConnectionContext = null) extends ConnectionInfo
+/**
+ * ::Experimental::
+ * An interface for filesystem connection information (e.g. s3, hdfs, etc.)
+ *
+ * @since 2.0.0
+ */
+@Experimental
+case class FileSystemConnectionInfo(paths: Seq[String],
+                              caseInsensitiveOptions: CaseInsensitiveMap = null,
+                              hadoopConf: scala.collection.Map[String, String] = null,
+                              context: ConnectionContext = null) extends ConnectionInfo
+
+/**
+ * ::Experimental::
+ * An interface for [[SchemaRelationProvider]] connections
+ *
+ * @since 2.0.0
+ */
+@Experimental
+case class SchemaRelationConnectionInfo(datasource: SchemaRelationProvider,
+                              caseInsensitiveOptions: CaseInsensitiveMap = null,
+                              context: ConnectionContext = null) extends ConnectionInfo
+
+/**
+ * ::Experimental::
+ * An interface for [[SchemaRelationProvider]] connections
+ *
+ * @since 2.0.0
+ */
+@Experimental
+case class RelationConnectionInfo(datasource: RelationProvider,
+                              caseInsensitiveOptions: CaseInsensitiveMap = null,
+                              context: ConnectionContext = null) extends ConnectionInfo
+
+/**
+ * ::Experimental::
+ * An interface for enabling pluggable resolving of data source connection parameters.
+ * This can enable providers to implement named connection handling in which provided
+ * connection identifiers are substituted for credentialed URLs.
+ *
+ * @since 2.0.0
+ */
+@Experimental
+trait ConnectionInfoResolver {
+  def resolve[T <: ConnectionInfo](connectionInfo: T): T
 }

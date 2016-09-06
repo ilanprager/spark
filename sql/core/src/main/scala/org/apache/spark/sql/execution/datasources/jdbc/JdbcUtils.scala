@@ -32,7 +32,9 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.catalyst.expressions.{MutableRow, SpecificMutableRow}
 import org.apache.spark.sql.catalyst.util.{DateTimeUtils, GenericArrayData}
+import org.apache.spark.sql.internal.ConnectionInfoResolverFactory
 import org.apache.spark.sql.jdbc.{JdbcDialect, JdbcDialects, JdbcType}
+import org.apache.spark.sql.sources.JDBCConnectionInfo
 import org.apache.spark.sql.types._
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.NextIterator
@@ -677,16 +679,19 @@ object JdbcUtils extends Logging {
       url: String,
       table: String,
       properties: Properties) {
-    val dialect = JdbcDialects.get(url)
+    val connectionInfo = ConnectionInfoResolverFactory.get().resolve(JDBCConnectionInfo(url,
+      table, properties))
+    val dialect = JdbcDialects.get(connectionInfo.url)
     val nullTypes: Array[Int] = df.schema.fields.map { field =>
       getJdbcType(field.dataType, dialect).jdbcNullType
     }
 
     val rddSchema = df.schema
-    val getConnection: () => Connection = createConnectionFactory(url, properties)
-    val batchSize = properties.getProperty(JDBC_BATCH_INSERT_SIZE, "1000").toInt
+    val getConnection: () => Connection =
+      createConnectionFactory(connectionInfo.url, connectionInfo.properties)
+    val batchSize = connectionInfo.properties.getProperty(JDBC_BATCH_INSERT_SIZE, "1000").toInt
     val isolationLevel =
-      properties.getProperty(JDBC_TXN_ISOLATION_LEVEL, "READ_UNCOMMITTED") match {
+      connectionInfo.properties.getProperty(JDBC_TXN_ISOLATION_LEVEL, "READ_UNCOMMITTED") match {
         case "NONE" => Connection.TRANSACTION_NONE
         case "READ_UNCOMMITTED" => Connection.TRANSACTION_READ_UNCOMMITTED
         case "READ_COMMITTED" => Connection.TRANSACTION_READ_COMMITTED
@@ -694,7 +699,8 @@ object JdbcUtils extends Logging {
         case "SERIALIZABLE" => Connection.TRANSACTION_SERIALIZABLE
       }
     df.foreachPartition(iterator => savePartition(
-      getConnection, table, iterator, rddSchema, nullTypes, batchSize, dialect, isolationLevel)
+      getConnection, connectionInfo.table, iterator, rddSchema, nullTypes,
+      batchSize, dialect, isolationLevel)
     )
   }
 }

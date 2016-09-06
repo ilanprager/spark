@@ -33,7 +33,7 @@ import org.apache.spark.sql.catalyst.catalog.BucketSpec
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.execution.FileRelation
-import org.apache.spark.sql.sources.{BaseRelation, DataSourceRegister, Filter}
+import org.apache.spark.sql.sources.{BaseRelation, ConnectionContext, DataSourceRegister, Filter}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
 
@@ -139,8 +139,11 @@ case class HadoopFsRelation(
     dataSchema: StructType,
     bucketSpec: Option[BucketSpec],
     fileFormat: FileFormat,
-    options: Map[String, String])(val sparkSession: SparkSession)
+    options: Map[String, String],
+    connContext: ConnectionContext = null)(val sparkSession: SparkSession)
   extends BaseRelation with FileRelation {
+
+  connectionContext = connContext
 
   override def sqlContext: SQLContext = sparkSession.sqlContext
 

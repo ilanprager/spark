@@ -37,7 +37,7 @@ import org.apache.spark.sql.execution.datasources.jdbc.JdbcRelationProvider
 import org.apache.spark.sql.execution.datasources.json.JsonFileFormat
 import org.apache.spark.sql.execution.datasources.parquet.ParquetFileFormat
 import org.apache.spark.sql.execution.streaming._
-import org.apache.spark.sql.internal.SQLConf
+import org.apache.spark.sql.internal.{ConnectionInfoResolverFactory, SQLConf}
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.streaming.OutputMode
 import org.apache.spark.sql.types.{CalendarIntervalType, StructType}
@@ -79,6 +79,13 @@ case class DataSource(
 
   lazy val providingClass: Class[_] = lookupDataSource(className)
   lazy val sourceInfo = sourceSchema()
+
+  lazy val fsConnectionInfo: FileSystemConnectionInfo = {
+    val connectionInfo = ConnectionInfoResolverFactory.get().resolve(
+      FileSystemConnectionInfo(paths, new CaseInsensitiveMap(options)))
+    sparkSession.sessionState.setInternalHadoopConf(connectionInfo.hadoopConf)
+    connectionInfo
+  }
 
   /** A map to maintain backward compatibility in case we move data sources around. */
   private val backwardCompatibilityMap: Map[String, String] = {
@@ -312,6 +319,14 @@ case class DataSource(
     }
   }
 
+  def baseRelationWithConnectionContext[T <: ConnectionInfo](f: T => BaseRelation,
+                                       connectionInfo: ConnectionInfo) : BaseRelation = {
+    val connInfo = ConnectionInfoResolverFactory.get().resolve(connectionInfo)
+    val baseRelation = f.apply(connInfo.asInstanceOf[T])
+    baseRelation.connectionContext = connInfo.context
+    baseRelation
+  }
+
   /**
    * Create a resolved [[BaseRelation]] that can be used to read data from or write data into this
    * [[DataSource]]
@@ -321,9 +336,15 @@ case class DataSource(
     val relation = (providingClass.newInstance(), userSpecifiedSchema) match {
       // TODO: Throw when too much is given.
       case (dataSource: SchemaRelationProvider, Some(schema)) =>
-        dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions, schema)
+        baseRelationWithConnectionContext((resolvedInfo: SchemaRelationConnectionInfo) => {
+          dataSource.createRelation(sparkSession.sqlContext,
+            resolvedInfo.caseInsensitiveOptions, schema)
+        }, SchemaRelationConnectionInfo(dataSource, caseInsensitiveOptions))
       case (dataSource: RelationProvider, None) =>
-        dataSource.createRelation(sparkSession.sqlContext, caseInsensitiveOptions)
+        baseRelationWithConnectionContext((resolvedInfo: RelationConnectionInfo) => {
+          dataSource.createRelation(sparkSession.sqlContext,
+            resolvedInfo.caseInsensitiveOptions)
+        }, RelationConnectionInfo(dataSource, caseInsensitiveOptions))
       case (_: SchemaRelationProvider, None) =>
         throw new AnalysisException(s"A schema needs to be specified when using $className.")
       case (_: RelationProvider, Some(_)) =>
@@ -332,7 +353,8 @@ case class DataSource(
       // We are reading from the results of a streaming query. Load files from the metadata log
       // instead of listing them using HDFS APIs.
       case (format: FileFormat, _)
-          if hasMetadata(caseInsensitiveOptions.get("path").toSeq ++ paths) =>
+          if fsConnectionInfo != null &&
+            hasMetadata(caseInsensitiveOptions.get("path").toSeq ++ paths) =>
         val basePath = new Path((caseInsensitiveOptions.get("path").toSeq ++ paths).head)
         val fileCatalog = new MetadataLogFileCatalog(sparkSession, basePath)
         val dataSchema = userSpecifiedSchema.orElse {
@@ -352,10 +374,12 @@ case class DataSource(
           dataSchema = dataSchema,
           bucketSpec = None,
           format,
-          options)(sparkSession)
+          options,
+          fsConnectionInfo.context)(sparkSession)
 
       // This is a non-streaming file based datasource.
-      case (format: FileFormat, _) =>
+      case (format: FileFormat, _)
+        if fsConnectionInfo != null =>
         val allPaths = caseInsensitiveOptions.get("path") ++ paths
         val globbedPaths = allPaths.flatMap { path =>
           val hdfsPath = new Path(path)
@@ -409,7 +433,8 @@ case class DataSource(
           dataSchema = dataSchema.asNullable,
           bucketSpec = bucketSpec,
           format,
-          caseInsensitiveOptions)(sparkSession)
+          caseInsensitiveOptions,
+          fsConnectionInfo.context)(sparkSession)
 
       case _ =>
         throw new AnalysisException(

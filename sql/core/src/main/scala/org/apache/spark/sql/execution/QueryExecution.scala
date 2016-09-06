@@ -19,9 +19,13 @@ package org.apache.spark.sql.execution
 
 import java.nio.charset.StandardCharsets
 import java.sql.Timestamp
+import java.util.ServiceLoader
 
+import scala.collection.JavaConverters._
+
+import org.apache.spark.internal.Logging
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{AnalysisException, Row, SparkSession, SQLContext}
+import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.analysis.UnsupportedOperationChecker
 import org.apache.spark.sql.catalyst.plans.logical.{LogicalPlan, ReturnAnswer}
@@ -71,7 +75,8 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
     sparkSession.sharedState.cacheManager.useCachedData(analyzed)
   }
 
-  lazy val optimizedPlan: LogicalPlan = sparkSession.sessionState.optimizer.execute(withCachedData)
+  lazy val optimizedPlan: LogicalPlan = applyDataAccessRules(
+    sparkSession.sessionState.optimizer.execute(withCachedData))
 
   lazy val sparkPlan: SparkPlan = {
     SparkSession.setActiveSession(sparkSession)
@@ -86,6 +91,16 @@ class QueryExecution(val sparkSession: SparkSession, val logical: LogicalPlan) {
 
   /** Internal version of the RDD. Avoids copies and has no schema */
   lazy val toRdd: RDD[InternalRow] = executedPlan.execute()
+
+  protected def applyDataAccessRules(plan: LogicalPlan): LogicalPlan = {
+    val loader = ServiceLoader.load(classOf[SecurityPlugin],
+      Utils.getSparkClassLoader)
+    var returnedPlan = plan
+    for (plugin: SecurityPlugin <- loader.asScala) {
+      returnedPlan = plugin.check(sparkSession, returnedPlan)
+    }
+    returnedPlan
+  }
 
   /**
    * Prepares a planned [[SparkPlan]] for execution by inserting shuffle operations and internal

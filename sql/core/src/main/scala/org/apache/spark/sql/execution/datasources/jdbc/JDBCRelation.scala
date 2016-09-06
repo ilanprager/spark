@@ -25,6 +25,7 @@ import org.apache.spark.internal.Logging
 import org.apache.spark.Partition
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession, SQLContext}
+import org.apache.spark.sql.internal.ConnectionInfoResolverFactory
 import org.apache.spark.sql.sources._
 import org.apache.spark.sql.types.StructType
 
@@ -102,13 +103,21 @@ private[sql] object JDBCRelation extends Logging {
 }
 
 private[sql] case class JDBCRelation(
-    url: String,
-    table: String,
+    jdbcUrl: String,
+    tableName: String,
     parts: Array[Partition],
-    properties: Properties = new Properties())(@transient val sparkSession: SparkSession)
+    jdbcProperties: Properties = new Properties())(@transient val sparkSession: SparkSession)
   extends BaseRelation
   with PrunedFilteredScan
   with InsertableRelation {
+
+  val connectionInfo = ConnectionInfoResolverFactory.get().resolve(JDBCConnectionInfo(jdbcUrl,
+    tableName, jdbcProperties))
+
+  connectionContext = connectionInfo.context
+  val url = connectionInfo.url
+  val table = connectionInfo.table
+  val properties = connectionInfo.properties
 
   override def sqlContext: SQLContext = sparkSession.sqlContext
 
