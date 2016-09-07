@@ -112,7 +112,7 @@ private[sql] case class JDBCRelation(
   with InsertableRelation {
 
   val connectionInfo = ConnectionInfoResolverFactory.get().resolve(JDBCConnectionInfo(jdbcUrl,
-    tableName, jdbcProperties))
+    tableName, jdbcProperties), sparkSession)
 
   connectionContext = connectionInfo.context
   val url = connectionInfo.url

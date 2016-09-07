@@ -390,5 +390,5 @@ case class RelationConnectionInfo(datasource: RelationProvider,
  */
 @Experimental
 trait ConnectionInfoResolver {
-  def resolve[T <: ConnectionInfo](connectionInfo: T): T
+  def resolve[T <: ConnectionInfo](connectionInfo: T, sparkSession: SparkSession): T
 }

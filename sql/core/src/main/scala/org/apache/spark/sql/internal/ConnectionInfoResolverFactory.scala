@@ -22,6 +22,7 @@ import java.util.ServiceLoader
 import scala.collection.JavaConverters._
 
 import org.apache.spark.sql.sources.{ConnectionInfo, ConnectionInfoResolver}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.util.Utils
 
 /**
@@ -30,7 +31,8 @@ import org.apache.spark.util.Utils
 object ConnectionInfoResolverFactory {
 
     private val defaultConnectionParameterResolver = new ConnectionInfoResolver {
-      override def resolve[T <: ConnectionInfo](connectionInfo: T): T = connectionInfo
+      override def resolve[T <: ConnectionInfo](connectionInfo: T,
+                                                sparkSession: SparkSession): T = connectionInfo
     }
 
     def get(): ConnectionInfoResolver = {

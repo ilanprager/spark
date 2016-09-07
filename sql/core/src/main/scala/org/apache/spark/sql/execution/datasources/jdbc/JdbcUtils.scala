@@ -680,7 +680,7 @@ object JdbcUtils extends Logging {
       table: String,
       properties: Properties) {
     val connectionInfo = ConnectionInfoResolverFactory.get().resolve(JDBCConnectionInfo(url,
-      table, properties))
+      table, properties), df.sparkSession)
     val dialect = JdbcDialects.get(connectionInfo.url)
     val nullTypes: Array[Int] = df.schema.fields.map { field =>
       getJdbcType(field.dataType, dialect).jdbcNullType

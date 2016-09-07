@@ -82,7 +82,7 @@ case class DataSource(
 
   lazy val fsConnectionInfo: FileSystemConnectionInfo = {
     val connectionInfo = ConnectionInfoResolverFactory.get().resolve(
-      FileSystemConnectionInfo(paths, new CaseInsensitiveMap(options)))
+      FileSystemConnectionInfo(paths, new CaseInsensitiveMap(options)), sparkSession)
     sparkSession.sessionState.setInternalHadoopConf(connectionInfo.hadoopConf)
     connectionInfo
   }
@@ -321,7 +321,7 @@ case class DataSource(
 
   def baseRelationWithConnectionContext[T <: ConnectionInfo](f: T => BaseRelation,
                                        connectionInfo: ConnectionInfo) : BaseRelation = {
-    val connInfo = ConnectionInfoResolverFactory.get().resolve(connectionInfo)
+    val connInfo = ConnectionInfoResolverFactory.get().resolve(connectionInfo, sparkSession)
     val baseRelation = f.apply(connInfo.asInstanceOf[T])
     baseRelation.connectionContext = connInfo.context
     baseRelation
